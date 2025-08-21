@@ -7,7 +7,11 @@ async function main() {
   const tenant = await db.tenant.upsert({
     where: { slug: "demo" },
     update: {},
-    create: { name: "Demo School", slug: "demo" },
+    create: { 
+      name: "Demo School", 
+      slug: "demo",
+      companyType: "SCHOOL"
+    },
   });
 
   const adminEmail = "admin@demo.local";
@@ -26,7 +30,13 @@ async function main() {
   await db.contact.upsert({
     where: { tenantId_phone: { tenantId: tenant.id, phone: "+919999999999" } },
     update: {},
-    create: { tenantId: tenant.id, name: "Parent One", phone: "+919999999999", email: "p1@example.com", tags: ["grade-1"] },
+    create: { 
+      tenantId: tenant.id, 
+      name: "Parent One", 
+      phone: "+919999999999", 
+      email: "p1@example.com", 
+      tags: ["grade-1"] 
+    },
   });
 
   console.log("Seeded:", { tenant: tenant.slug, admin: admin.email });

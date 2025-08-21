@@ -1,50 +1,111 @@
-import { db } from "@/lib/db";
+import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
-import Razorpay from "razorpay";
-import { env } from "@/env";
-import { z } from "zod";
+import { db } from "@/lib/db";
 
-export async function GET() {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) return new Response("Unauthorized", { status: 401 });
-  const tenantId = (session.user as any).tenantId as string;
-  const payments = await db.payment.findMany({ where: { tenantId }, orderBy: { createdAt: "desc" }, take: 100 });
-  return Response.json({ payments });
+export async function POST(request: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.tenantId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { contactId, amount, notes } = await request.json();
+
+    if (!contactId || !amount) {
+      return NextResponse.json({ error: "Contact ID and amount are required" }, { status: 400 });
+    }
+
+    // Verify contact exists and belongs to tenant
+    const contact = await db.contact.findFirst({
+      where: {
+        id: contactId,
+        tenantId: session.user.tenantId
+      }
+    });
+
+    if (!contact) {
+      return NextResponse.json({ error: "Contact not found" }, { status: 404 });
+    }
+
+    // Create payment record
+    const payment = await db.payment.create({
+      data: {
+        contactId,
+        amount: Math.round(amount * 100), // Convert to paise
+        currency: "INR",
+        status: "CREATED",
+        metadata: notes ? { notes } : {},
+        tenantId: session.user.tenantId
+      }
+    });
+
+    // TODO: Integrate with Razorpay to create actual order
+    // For now, just return the payment record
+    return NextResponse.json({
+      success: true,
+      payment: {
+        id: payment.id,
+        amount: payment.amount / 100, // Convert back to rupees
+        currency: payment.currency,
+        status: payment.status,
+        contactName: contact.name,
+        contactPhone: contact.phone,
+        createdAt: payment.createdAt
+      }
+    });
+
+  } catch (error: any) {
+    console.error("Payment creation error:", error);
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 }
+    );
+  }
 }
 
-const createSchema = z.object({
-  contactId: z.string().min(1),
-  amountInPaise: z.number().int().positive(),
-  notes: z.record(z.string()).optional(),
-});
+export async function GET(request: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.tenantId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
-export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) return new Response("Unauthorized", { status: 401 });
-  const tenantId = (session.user as any).tenantId as string;
-  const body = await req.json();
-  const data = createSchema.parse(body);
+    const payments = await db.payment.findMany({
+      where: { tenantId: session.user.tenantId },
+      include: {
+        contact: {
+          select: {
+            name: true,
+            phone: true
+          }
+        }
+      },
+      orderBy: { createdAt: "desc" }
+    });
 
-  const rp = new Razorpay({ key_id: env.RAZORPAY_KEY_ID!, key_secret: env.RAZORPAY_KEY_SECRET! });
-  const order = await rp.orders.create({
-    amount: data.amountInPaise,
-    currency: "INR",
-    notes: data.notes,
-  });
+    const formattedPayments = payments.map(payment => ({
+      id: payment.id,
+      amount: payment.amount / 100, // Convert from paise to rupees
+      currency: payment.currency,
+      status: payment.status,
+      contactName: payment.contact?.name || "Unknown",
+      contactPhone: payment.contact?.phone || "Unknown",
+      razorpayOrderId: payment.razorpayOrderId,
+      razorpayPaymentId: payment.razorpayPaymentId,
+      createdAt: payment.createdAt,
+      updatedAt: payment.updatedAt
+    }));
 
-  const payment = await db.payment.create({
-    data: {
-      tenantId,
-      contactId: data.contactId,
-      amount: data.amountInPaise,
-      currency: "INR",
-      razorpayOrderId: order.id,
-      metadata: order as any,
-    },
-  });
+    return NextResponse.json(formattedPayments);
 
-  return Response.json({ payment, order });
+  } catch (error: any) {
+    console.error("Payment fetch error:", error);
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 }
+    );
+  }
 }
 
 

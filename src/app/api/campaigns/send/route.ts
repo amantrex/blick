@@ -1,26 +1,32 @@
 import { db } from "@/lib/db";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { auth } from "@clerk/nextjs/server";
 import { sendWhatsAppText } from "@/lib/whatsapp";
 
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) return new Response("Unauthorized", { status: 401 });
-  const tenantId = (session.user as any).tenantId as string;
+  const { userId } = auth();
+  if (!userId) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
+  const user = await db.user.findUnique({ where: { id: userId } });
+  if (!user?.tenantId) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
   const { campaignId } = await req.json();
 
   const campaign = await db.campaign.findFirst({
-    where: { id: campaignId, tenantId },
+    where: { id: campaignId, tenantId: user.tenantId },
     include: { template: true },
   });
   if (!campaign) return new Response("Not found", { status: 404 });
 
-  const contacts = await db.contact.findMany({ where: { tenantId }, take: 100 });
+  const contacts = await db.contact.findMany({ where: { tenantId: user.tenantId }, take: 100 });
   for (const contact of contacts) {
     const res = await sendWhatsAppText(campaign.template.channelProvider as any, contact.phone, campaign.template.content);
     await db.message.create({
       data: {
-        tenantId,
+        tenantId: user.tenantId,
         campaignId: campaign.id,
         contactId: contact.id,
         status: res.ok ? "SENT" : "FAILED",
@@ -33,5 +39,3 @@ export async function POST(req: Request) {
   await db.campaign.update({ where: { id: campaign.id }, data: { status: "SENT" } });
   return Response.json({ ok: true });
 }
-
-

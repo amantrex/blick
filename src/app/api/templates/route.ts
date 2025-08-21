@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { auth } from "@clerk/nextjs/server";
 import { db } from "@/lib/db";
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.tenantId) {
+    const { userId } = auth();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const user = await db.user.findUnique({ where: { id: userId } });
+    if (!user?.tenantId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -20,7 +24,7 @@ export async function POST(request: NextRequest) {
     const existingTemplate = await db.template.findFirst({
       where: {
         name,
-        tenantId: session.user.tenantId
+        tenantId: user.tenantId
       }
     });
 
@@ -35,7 +39,7 @@ export async function POST(request: NextRequest) {
         channelProvider,
         content,
         variables: variables || [],
-        tenantId: session.user.tenantId
+        tenantId: user.tenantId
       }
     });
 
@@ -62,13 +66,18 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.tenantId) {
+    const { userId } = auth();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const user = await db.user.findUnique({ where: { id: userId } });
+    if (!user?.tenantId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const templates = await db.template.findMany({
-      where: { tenantId: session.user.tenantId },
+      where: { tenantId: user.tenantId },
       select: {
         id: true,
         name: true,
@@ -91,5 +100,3 @@ export async function GET(request: NextRequest) {
     );
   }
 }
-
-

@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { auth } from "@clerk/nextjs/server";
 import { db } from "@/lib/db";
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.tenantId) {
+    const { userId } = auth();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const user = await db.user.findUnique({ where: { id: userId } });
+    if (!user?.tenantId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -18,7 +22,7 @@ export async function POST(request: NextRequest) {
 
     // Verify template exists
     const template = await db.template.findFirst({
-      where: { id: templateId, tenantId: session.user.tenantId }
+      where: { id: templateId, tenantId: user.tenantId }
     });
 
     if (!template) {
@@ -29,7 +33,7 @@ export async function POST(request: NextRequest) {
     const contacts = await db.contact.findMany({
       where: {
         id: { in: contactIds },
-        tenantId: session.user.tenantId
+        tenantId: user.tenantId
       }
     });
 
@@ -44,8 +48,8 @@ export async function POST(request: NextRequest) {
         templateId,
         scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
         status: scheduledAt ? "SCHEDULED" : "DRAFT",
-        tenantId: session.user.tenantId,
-        createdById: session.user.id,
+        tenantId: user.tenantId,
+        createdById: userId,
         estimatedRecipients: contacts.length
       }
     });
@@ -80,13 +84,18 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.tenantId) {
+    const { userId } = auth();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const user = await db.user.findUnique({ where: { id: userId } });
+    if (!user?.tenantId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const campaigns = await db.campaign.findMany({
-      where: { tenantId: session.user.tenantId },
+      where: { tenantId: user.tenantId },
       include: {
         template: {
           select: { name: true, channelProvider: true }
@@ -108,5 +117,3 @@ export async function GET(request: NextRequest) {
     );
   }
 }
-
-

@@ -1,15 +1,6 @@
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
-import { redirect } from "next/navigation";
 import Link from "next/link";
 
 export default async function CampaignsPage() {
-  const session = await getServerSession(authOptions);
-  
-  if (!session?.user) {
-    redirect("/signin");
-  }
-
   return (
     <div className="p-6 space-y-6">
       <div className="flex justify-between items-center">
@@ -18,7 +9,7 @@ export default async function CampaignsPage() {
           href="/dashboard/campaigns/new" 
           className="bg-black text-white px-4 py-2 rounded hover:bg-gray-800"
         >
-          Create Campaign
+          + Create Campaign
         </Link>
       </div>
       

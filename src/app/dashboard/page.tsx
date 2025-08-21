@@ -1,20 +1,53 @@
-import { getServerSession } from "next-auth";
+import { currentUser } from "@clerk/nextjs/server";
+import { SignOutButton } from "./components/sign-out-button";
 import { redirect } from "next/navigation";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { db } from "@/lib/db";
 import Link from "next/link";
-import { SignOutButton } from "./components/sign-out-button";
 
 export default async function DashboardPage() {
-  const session = await getServerSession(authOptions);
-  
-  if (!session?.user?.tenantId) {
-    redirect("/signin");
+  const user = await currentUser();
+  if (!user) {
+    redirect("/sign-in");
   }
 
-  const tenant = await db.tenant.findUnique({
-    where: { id: session.user.tenantId }
+  let dbUser = await db.user.findUnique({
+    where: { id: user.id },
+    include: { tenant: true },
   });
+
+  if (!dbUser || !dbUser.tenant) {
+    // User exists in Clerk but not in our DB or not linked to a tenant
+    // Create a default tenant and link the user to it
+    const defaultTenantName = `${user.firstName || user.emailAddresses[0].emailAddress}'s Company`;
+    const defaultTenantSlug = `company-${user.id}`; // Simple slug, might need more robust generation
+
+    try {
+      const newTenant = await db.tenant.create({
+        data: {
+          name: defaultTenantName,
+          slug: defaultTenantSlug,
+          companyType: "OTHER", // Default company type
+        },
+      });
+
+      dbUser = await db.user.create({
+        data: {
+          id: user.id, // Use Clerk user ID as Prisma user ID
+          email: user.emailAddresses[0].emailAddress,
+          name: user.firstName || user.emailAddresses[0].emailAddress,
+          tenantId: newTenant.id,
+          role: "ADMIN", // Default role for the first user
+        },
+        include: { tenant: true }, // Include tenant to avoid immediate "Tenant not found"
+      });
+    } catch (error) {
+      console.error("Error creating default tenant/user:", error);
+      // Handle error, maybe redirect to an error page or show a generic message
+      return <div>Error: Could not set up user data. Please try again.</div>;
+    }
+  }
+
+  const { tenant } = dbUser;
 
   return (
     <div className="max-w-7xl mx-auto p-6">
@@ -22,10 +55,10 @@ export default async function DashboardPage() {
         <div className="flex justify-between items-start">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">
-              Welcome back, {session.user.name || "Admin"}!
+              Welcome back, {user.firstName || "Admin"}!
             </h1>
             <p className="text-gray-600 mt-2">
-              {tenant?.name} • {tenant?.companyType?.toLowerCase()}
+              {tenant.name} • {tenant.companyType?.toLowerCase()}
             </p>
           </div>
           <SignOutButton />
@@ -229,5 +262,3 @@ export default async function DashboardPage() {
     </div>
   );
 }
-
-

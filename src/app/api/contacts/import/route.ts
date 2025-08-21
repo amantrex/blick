@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { auth } from "@clerk/nextjs/server";
 import { db } from "@/lib/db";
 
 export async function POST(request: NextRequest) {
   try {
     // Get session and verify authentication
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.tenantId) {
+    const { userId } = auth();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const user = await db.user.findUnique({ where: { id: userId } });
+    if (!user?.tenantId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -40,8 +44,19 @@ export async function POST(request: NextRequest) {
       const batch = validContacts.slice(i, i + batchSize);
       
       try {
+        // Deduplicate contacts within the batch by phone number
+        const uniqueContacts = new Map();
+        batch.forEach(contact => {
+          const phone = contact.phone.toString().trim();
+          if (!uniqueContacts.has(phone)) {
+            uniqueContacts.set(phone, contact);
+          }
+        });
+
+        const batchToProcess = Array.from(uniqueContacts.values());
+
         // Use upsert to handle both creation and updates
-        const upsertPromises = batch.map(async (contact) => {
+        const upsertPromises = batchToProcess.map(async (contact) => {
           try {
             const phone = contact.phone.toString().trim();
             const name = contact.name || phone;
@@ -52,7 +67,7 @@ export async function POST(request: NextRequest) {
             const existingContact = await db.contact.findFirst({
               where: {
                 phone,
-                tenantId: session.user.tenantId
+                tenantId: user.tenantId
               }
             });
 
@@ -75,8 +90,7 @@ export async function POST(request: NextRequest) {
                   phone,
                   email,
                   tags,
-                  tenantId: session.user.tenantId,
-                  createdById: session.user.id
+                  tenantId: user.tenantId
                 }
               });
               results.created++;

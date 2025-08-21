@@ -26,3 +26,4 @@ Security/Notes
 - Protect `.env` and webhook secrets
 - For WhatsApp provider, pick one: Gupshup, Twilio, or Meta WABA
 - For production, set DB pool (Prisma Accelerate or connection pool)
+# blick

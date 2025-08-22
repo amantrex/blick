@@ -35,7 +35,7 @@ export default function RootLayout({
           fontFamily: 'Arial, Helvetica, sans-serif',
         },
         elements: {
-          footer: {
+          footerText: {
             display: 'none',
           },
         },

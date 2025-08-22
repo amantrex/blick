@@ -25,12 +25,7 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
-/* Hide "Powered by Clerk" text */
-.cl-footer-action {
-  display: none !important;
-}
-
-/* Hide "Secured by Development mode" text */
-.cl-footer-text {
+/* Hide "Secured by Clerk" branding */
+.cl-footerEnd {
   display: none !important;
 }
